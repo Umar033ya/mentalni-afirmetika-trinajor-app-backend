@@ -54,7 +54,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
   });
 }
 
-process.on("unhandledRejection", (reason) => {
+process.on("unhandledRejection", (reason: unknown) => {
   // eslint-disable-next-line no-console
   console.error("[server] unhandled rejection:", reason);
 });

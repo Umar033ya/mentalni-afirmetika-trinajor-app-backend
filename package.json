@@ -16,6 +16,11 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.25",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.19.43",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -23,15 +28,10 @@
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "typescript": "^5.5.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.25",
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^20.19.43",
-    "tsx": "^4.19.0",
-    "typescript": "^5.5.4"
+    "tsx": "^4.19.0"
   }
 }

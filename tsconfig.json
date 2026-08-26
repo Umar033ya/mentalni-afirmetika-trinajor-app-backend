@@ -15,11 +15,7 @@
     "sourceMap": false,
     "noUnusedLocals": false,
     "noImplicitOverride": true,
-    "useUnknownInCatchVariables": true,
-    "typeRoots": [
-      "./node_modules/@types",
-      "./src/types"
-    ]
+    "useUnknownInCatchVariables": true
   },
   "include": [
     "src/**/*"
