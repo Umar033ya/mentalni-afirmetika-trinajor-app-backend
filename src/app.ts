@@ -28,6 +28,31 @@ export function createApp(): Express {
     app.use(globalLimiter);
   }
 
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      success: true,
+      data: {
+        name: "Mental Arithmetic Backend",
+        status: "ok",
+        apiBase: "/api/v1",
+        health: "/health",
+        modules: [
+          "auth", "users", "profile", "presence", "questions", "practice",
+          "progression", "achievements", "challenges", "statistics",
+          "leaderboard", "duels", "matches", "rating", "subscription",
+          "cosmetics", "notifications", "settings", "rewards", "admin"
+        ],
+        exampleEndpoints: [
+          "/api/v1/auth/login",
+          "/api/v1/users/me",
+          "/api/v1/users/online",
+          "/api/v1/duels/waiting",
+          "/api/v1/leaderboard"
+        ]
+      }
+    });
+  });
+
   app.get("/health", async (_req, res) => {
     const dbStatus = await getCachedDbStatus();
     res.status(200).json({

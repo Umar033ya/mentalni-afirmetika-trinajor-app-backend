@@ -4,7 +4,11 @@ import { env } from "../config/env";
 import { errorBody } from "../utils/response";
 
 export function notFoundHandler(req: Request, res: Response): void {
-  res.status(404).json(errorBody("NOT_FOUND", `Route ${req.method} ${req.path} not found`));
+  let message = `Route ${req.method} ${req.path} not found`;
+  if (req.path.startsWith("/api/") && !req.path.startsWith("/api/v1")) {
+    message += ". This API is versioned - use the /api/v1 prefix (e.g. /api/v1/auth/login)";
+  }
+  res.status(404).json(errorBody("NOT_FOUND", message));
 }
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
