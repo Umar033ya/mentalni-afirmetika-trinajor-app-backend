@@ -33,6 +33,97 @@ import { notificationService } from "../notifications/notification.service";
 import { userService } from "../users/user.service";
 import type { CreateDuelPayload } from "./duel.validation";
 
+const DETERMINISTIC_OPERATIONS = ["addition", "subtraction", "multiplication", "division"] as const;
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function mulberry32(seed: number): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), t | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randInt(rng: () => number, min: number, max: number): number {
+  return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+function computeExpectedAnswer(operands: number[], operation: string): number {
+  if (operands.length === 0) return 0;
+  switch (operation) {
+    case "addition":
+      return operands.reduce((sum, value) => sum + value, 0);
+    case "subtraction":
+      return operands.slice(1).reduce((acc, value) => acc - value, operands[0]);
+    case "multiplication":
+      return operands.reduce((product, value) => product * value, 1);
+    case "division": {
+      const quotient = operands.slice(1).reduce((acc, value) => (value === 0 ? Number.NaN : acc / value), operands[0]);
+      return Number.isFinite(quotient) ? quotient : 0;
+    }
+    default:
+      return operands[0] ?? 0;
+  }
+}
+
+function buildOperands(operation: string, digitCount: number, rows: number, rng: () => number): number[] {
+  const operandCount = Math.max(2, Math.min(rows, 8));
+  const maxValue = 10 ** digitCount - 1;
+
+  switch (operation) {
+    case "addition":
+      return Array.from({ length: operandCount }, () => randInt(rng, 1, maxValue));
+    case "subtraction": {
+      const start = randInt(rng, 1, maxValue);
+      const remaining = Array.from({ length: operandCount - 1 }, () => randInt(rng, 0, Math.min(start, maxValue)));
+      return [start, ...remaining];
+    }
+    case "multiplication":
+      return Array.from({ length: operandCount }, () => randInt(rng, 1, Math.max(1, Math.floor(maxValue / 2))));
+    case "division": {
+      const divisor = randInt(rng, 1, Math.max(1, Math.min(9, maxValue)));
+      const quotient = randInt(rng, 1, Math.max(1, Math.min(99, maxValue)));
+      return [quotient * divisor, divisor];
+    }
+    default:
+      return [randInt(rng, 1, maxValue), randInt(rng, 1, maxValue)];
+  }
+}
+
+function generateDuelQuestions(duelId: string, config: GenerationConfig) {
+  const operationPool = config.operation === "mixed"
+    ? [...DETERMINISTIC_OPERATIONS]
+    : [config.operation];
+
+  return Array.from({ length: config.questionCount }, (_, index) => {
+    const questionNumber = index + 1;
+    const operation = operationPool[questionNumber % operationPool.length];
+    const rng = mulberry32(hashString(`${duelId}:${questionNumber}`));
+    const operands = buildOperands(operation, config.digitCount, config.rows, rng);
+    const answer = computeExpectedAnswer(operands, operation);
+
+    return {
+      duel_id: duelId,
+      question_number: questionNumber,
+      operation,
+      digit_count: config.digitCount,
+      rows: config.rows,
+      operands,
+      answer
+    };
+  });
+}
+
 const ACTIVE_STATUSES = ["WAITING", "READY", "COUNTDOWN", "ONGOING"];
 
 async function loadDuel(duelId: string): Promise<DuelRow> {
@@ -91,6 +182,10 @@ async function create(userId: string, payload: CreateDuelPayload) {
     .select("*")
     .single<DuelRow>();
   if (error || !duel) throw error ?? new Error("Failed to create duel");
+
+  const questionRows = generateDuelQuestions(duel.id, config);
+  const { error: questionError } = await db.from("duel_questions").insert(questionRows);
+  if (questionError) throw questionError;
 
   const { error: playerError } = await db.from("duel_players").insert({
     duel_id: duel.id,
@@ -382,12 +477,38 @@ export async function submitAnswer(duelId: string, userId: string, input: DuelAn
     throw new AppError(422, "IMPOSSIBLE_RESPONSE_TIME", "Answer submitted faster than physically possible");
   }
 
-  const evaluation = evaluateSubmission({
-    answer: input.answer,
-    claimedIsCorrect: input.isCorrect,
-    operands: input.operands,
-    operation: duel.operation
-  });
+  const { data: canonicalQuestion, error: questionError } = await db
+    .from("duel_questions")
+    .select("*")
+    .eq("duel_id", duelId)
+    .eq("question_number", input.questionNumber)
+    .maybeSingle<{ answer: number; operation: string; operands: number[] }>();
+  if (questionError) throw questionError;
+  if (!canonicalQuestion) {
+    throw new AppError(404, "QUESTION_NOT_FOUND", "This duel question could not be found on the server");
+  }
+
+  const expected = Number(canonicalQuestion.answer);
+  const evaluation = {
+    isCorrect: Math.abs(expected - input.answer) < 1e-9,
+    verifiedByServer: true
+  };
+
+  const previousAnswersRes = await db
+    .from("duel_answers")
+    .select("question_number")
+    .eq("duel_id", duelId)
+    .eq("user_id", userId)
+    .order("question_number", { ascending: true });
+  const answeredNumbers = new Set((previousAnswersRes.data ?? []).map((row) => Number(row.question_number)));
+  if (answeredNumbers.has(input.questionNumber)) {
+    throw new AppError(409, "DUPLICATE_ANSWER", "You already answered this question");
+  }
+  for (let questionNumber = 1; questionNumber < input.questionNumber; questionNumber += 1) {
+    if (!answeredNumbers.has(questionNumber)) {
+      throw new AppError(422, "QUESTION_OUT_OF_ORDER", "Answer questions in order");
+    }
+  }
 
   const xpReward = evaluation.isCorrect ? xpForCorrectAnswer(duel.difficulty as Difficulty) : 0;
 

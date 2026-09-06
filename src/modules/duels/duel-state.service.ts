@@ -31,6 +31,36 @@ export function duelConfigFrom(duel: DuelRow): GenerationConfig {
   };
 }
 
+export function getDuelBonusXp(outcome: "win" | "loss" | "draw"): number {
+  if (outcome === "win") return DUEL_WIN_BONUS_XP;
+  if (outcome === "draw") return DUEL_DRAW_BONUS_XP;
+  return 0;
+}
+
+export function isPlayerFinished(playerProgress: number, questionCount: number): boolean {
+  return playerProgress >= questionCount;
+}
+
+export function getDuelOutcomeSummary(playerScore: number, opponentScore: number): {
+  winnerId: string | null;
+  isDraw: boolean;
+  scoreDifference: number;
+} {
+  if (playerScore === opponentScore) {
+    return { winnerId: null, isDraw: true, scoreDifference: 0 };
+  }
+
+  return {
+    winnerId: playerScore > opponentScore ? "player1" : "player2",
+    isDraw: false,
+    scoreDifference: Math.abs(playerScore - opponentScore)
+  };
+}
+
+export function totalDuelXp(playerTotalXp: number, outcome: "win" | "loss" | "draw"): number {
+  return playerTotalXp + getDuelBonusXp(outcome);
+}
+
 export function computeSchedule(questionCount: number, timePerQuestionMs: number) {
   const startAt = new Date(Date.now() + COUNTDOWN_MS);
   const totalMs = questionCount * timePerQuestionMs + ANSWER_GRACE_MS * 2;
@@ -117,14 +147,13 @@ export async function maybeFinalize(duel: DuelRow): Promise<DuelRow> {
   const s1 = scoreOf(p1.user_id);
   const s2 = scoreOf(p2.user_id);
 
-  let winnerId: string | null = null;
-  let isDraw = false;
-  if (s1 === s2) isDraw = true;
-  else winnerId = s1 > s2 ? p1.user_id : p2.user_id;
+  const summary = getDuelOutcomeSummary(s1, s2);
+  let winnerId: string | null = summary.winnerId;
+  let isDraw = summary.isDraw;
 
   await db.from("duels").update({ winner_id: winnerId, is_draw: isDraw }).eq("id", duel.id);
 
-  const scoreDifference = Math.abs(s1 - s2);
+  const scoreDifference = summary.scoreDifference;
 
   const results = await Promise.all(
     players.map(async (player) => {
@@ -132,8 +161,9 @@ export async function maybeFinalize(duel: DuelRow): Promise<DuelRow> {
       const outcome: "win" | "loss" | "draw" =
         isDraw ? "draw" : winnerId === player.user_id ? "win" : "loss";
 
-      const bonusXp = outcome === "win" ? DUEL_WIN_BONUS_XP : outcome === "draw" ? DUEL_DRAW_BONUS_XP : 0;
-      const xpResult = await applyXp(player.user_id, player.total_xp + bonusXp, "duel", {
+      const bonusXp = getDuelBonusXp(outcome);
+      const totalAwardXp = totalDuelXp(player.total_xp, outcome);
+      const xpResult = await applyXp(player.user_id, totalAwardXp, "duel", {
         duelId: duel.id,
         description: outcome === "win" ? "Duel victory" : outcome === "draw" ? "Duel draw" : "Duel participation"
       });
@@ -210,7 +240,7 @@ export async function maybeFinalize(duel: DuelRow): Promise<DuelRow> {
               : "Duel lost",
         message: `Final score ${correct} vs ${
           opponent.user_id === p1.user_id ? s1 : s2
-        }. XP earned: ${player.total_xp + bonusXp}, Rating ${eloFinal.delta >= 0 ? "+" : ""}${eloFinal.delta}`,
+        }. XP earned: ${totalAwardXp}, Rating ${eloFinal.delta >= 0 ? "+" : ""}${eloFinal.delta}`,
         data: { duelId: duel.id, outcome, score: correct }
       });
 

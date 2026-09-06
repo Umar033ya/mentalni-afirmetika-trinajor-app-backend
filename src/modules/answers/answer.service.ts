@@ -25,9 +25,11 @@ function foldOperands(operands: number[], operation: string): number | null {
 }
 
 /**
- * Determines correctness. When the client submits the operands of the generated
- * question we recompute the result server-side ("verified"); otherwise we fall
- * back to the client-reported flag and mark it as unverified.
+ * Server-authoritative answer checking.
+ *
+ * The client may include operands or a claimed flag, but only a server-side
+ * recomputation of the real equation is trusted. Without a trusted computation,
+ * correctness must default to false instead of accepting the client value.
  */
 export function evaluateSubmission(input: {
   answer: number;
@@ -41,7 +43,8 @@ export function evaluateSubmission(input: {
       return { isCorrect: Math.abs(expected - input.answer) < 1e-9, verifiedByServer: true };
     }
   }
-  return { isCorrect: input.claimedIsCorrect === true, verifiedByServer: false };
+
+  return { isCorrect: false, verifiedByServer: false };
 }
 
 export function assertNotImpossibleResponseTime(responseTimeMs: number | undefined): void {

@@ -2,6 +2,7 @@ import "dotenv/config";
 import { env } from "./config/env";
 import { createApp } from "./app";
 import { checkSupabaseConnection } from "./config/database";
+import { setupSocketServer } from "./socket";
 
 const app = createApp();
 const PORT = env.PORT || 5000;
@@ -42,6 +43,7 @@ async function verifyDatabaseConnection(): Promise<void> {
 }
 
 const server = app.listen(PORT, () => {
+  setupSocketServer(server);
   printBanner();
   void verifyDatabaseConnection();
 });

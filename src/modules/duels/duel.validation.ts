@@ -19,14 +19,14 @@ export const createDuelSchema = z
 
 export type CreateDuelPayload = z.infer<typeof createDuelSchema>;
 
-export const duelAnswerSchema = z.object({
-  questionNumber: z.number().int().min(1),
-  answer: z.number().finite(),
-  clientTimeMs: z.number().int().min(0).max(3600000).optional(),
-  responseTimeMs: z.number().int().min(0).max(600000).optional(),
-  isCorrect: z.boolean().optional(),
-  operands: z.array(z.number().finite()).max(30).optional()
-});
+export const duelAnswerSchema = z
+  .object({
+    questionNumber: z.number().int().min(1),
+    answer: z.number().finite(),
+    clientTimeMs: z.number().int().min(0).max(3600000).optional(),
+    responseTimeMs: z.number().int().min(0).max(600000).optional()
+  })
+  .strict();
 
 export type DuelAnswerPayload = z.infer<typeof duelAnswerSchema>;
 

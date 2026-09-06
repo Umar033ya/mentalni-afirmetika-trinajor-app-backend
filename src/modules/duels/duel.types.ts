@@ -117,8 +117,6 @@ export interface AnswerRequestPayload {
   answer: number;
   clientTimeMs?: number;
   responseTimeMs?: number;
-  isCorrect?: boolean;
-  operands?: number[];
 }
 
 export interface AnswerResult {

@@ -7,6 +7,17 @@ import { notificationService } from "../notifications/notification.service";
 import { userService } from "../users/user.service";
 import type { LoginPayload, RegisterPayload } from "./auth.validation";
 
+function serializeUser(user: Pick<UserRow, "id" | "username" | "email" | "level" | "xp" | "duel_rating">) {
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    level: user.level,
+    xp: user.xp,
+    duelRating: user.duel_rating
+  };
+}
+
 async function assertAvailable(fields: { email: string; username: string }): Promise<void> {
   const orFilter = `email.eq.${fields.email},username.ilike.${fields.username}`;
   const { data } = await db.from("users").select("id,email,username").or(orFilter);
@@ -60,25 +71,22 @@ async function register(payload: RegisterPayload) {
 
   return {
     token: issueToken(user),
-    user: {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      level: user.level,
-      xp: user.xp,
-      duelRating: user.duel_rating
-    }
+    user: serializeUser(user)
   };
 }
 
 async function login(payload: LoginPayload) {
-  const isEmail = payload.identifier.includes("@");
-  let query = db.from("users").select("*");
-  query = isEmail
-    ? query.eq("email", payload.identifier.toLowerCase())
-    : query.ilike("username", payload.identifier);
+  const identifier = payload.identifier.trim();
+  const isEmail = identifier.includes("@");
+  const normalized = isEmail ? identifier.toLowerCase() : identifier;
 
-  const { data: user } = await query.maybeSingle<UserRow>();
+  const { data: user, error } = await db
+    .from("users")
+    .select("*")
+    .or(`email.ilike.${normalized},username.ilike.${normalized}`)
+    .maybeSingle<UserRow>();
+
+  if (error) throw error;
   if (!user) throw new AppError(401, "INVALID_CREDENTIALS", "Invalid credentials");
 
   const valid = await verifyPassword(payload.password, user.password_hash);
@@ -86,7 +94,10 @@ async function login(payload: LoginPayload) {
   if (user.is_banned) throw new AppError(403, "ACCOUNT_BANNED", "This account has been banned");
 
   await userService.touchPresence(user.id);
-  return { token: issueToken(user) };
+  return {
+    token: issueToken(user),
+    user: serializeUser(user)
+  };
 }
 
 async function me(userId: string) {
