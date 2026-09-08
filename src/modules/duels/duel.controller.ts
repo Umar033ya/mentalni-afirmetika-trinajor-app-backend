@@ -50,7 +50,8 @@ export const duelController = {
   },
 
   async join(req: Request, res: Response): Promise<void> {
-    const state = await duelService.join(req.params.id, req.user!.id);
+     const payload = req.body as { seed?: string; numberType?: string };
+     const state = await duelService.join(req.params.id, req.user!.id, payload);
     ok(res, state);
   },
 

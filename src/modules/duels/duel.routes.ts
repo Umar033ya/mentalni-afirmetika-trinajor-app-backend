@@ -5,7 +5,7 @@ import { answerLimiter } from "../../middleware/rate-limit.middleware";
 import { asyncHandler } from "../../utils/async-handler";
 import { z } from "zod";
 import { duelController } from "./duel.controller";
-import { createDuelSchema, duelAnswerSchema } from "./duel.validation";
+import { createDuelSchema, duelAnswerSchema, joinDuelSchema } from "./duel.validation";
 
 const router = Router();
 
@@ -18,7 +18,7 @@ router.get("/completed", asyncHandler(duelController.listCompleted));
 router.get("/", asyncHandler(duelController.listAll));
 router.get("/:id", asyncHandler(duelController.getById));
 router.get("/:id/state", asyncHandler(duelController.getState));
-router.post("/:id/join", asyncHandler(duelController.join));
+router.post("/:id/join", validate({ body: joinDuelSchema }), asyncHandler(duelController.join));
 router.post("/:id/accept", asyncHandler(duelController.accept));
 router.post("/:id/decline", asyncHandler(duelController.decline));
 router.post("/:id/cancel", asyncHandler(duelController.cancel));

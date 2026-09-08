@@ -9,6 +9,7 @@ import type {
 } from "./duel.types";
 import { notificationService } from "../notifications/notification.service";
 import { applyXp } from "../progression/xp.service";
+import { DEFAULT_RATING } from "../../config/constants";
 import { achievementService } from "../achievements/achievement.service";
 import { challengeService } from "../challenges/challenge.service";
 import { calculateElo } from "../../utils/rating";
@@ -27,7 +28,8 @@ export function duelConfigFrom(duel: DuelRow): GenerationConfig {
     rows: duel.rows,
     questionCount: duel.question_count,
     timePerQuestionMs: duel.time_per_question_ms,
-    difficulty: duel.difficulty as GenerationConfig["difficulty"]
+    difficulty: duel.difficulty as GenerationConfig["difficulty"],
+    numberType: (duel as any).number_type ?? "oddiy"
   };
 }
 
@@ -169,8 +171,8 @@ export async function maybeFinalize(duel: DuelRow): Promise<DuelRow> {
       });
 
       // Elo is computed symmetrically from the ratings snapshotted at join time.
-      const baseMine = player.rating_before ?? player.user?.duel_rating ?? 1000;
-      const baseOpp = opponent.rating_before ?? opponent.user?.duel_rating ?? 1000;
+      const baseMine = player.rating_before ?? player.user?.duel_rating ?? DEFAULT_RATING;
+      const baseOpp = opponent.rating_before ?? opponent.user?.duel_rating ?? DEFAULT_RATING;
       const eloFinal = calculateElo({
         playerRating: baseMine,
         opponentRating: baseOpp,
@@ -311,7 +313,7 @@ export function buildStateResponse(
       userId: p.user_id,
       username: p.user?.username ?? "Unknown",
       level: p.user?.level ?? 1,
-      duelRating: p.rating_after ?? p.rating_before ?? p.user?.duel_rating ?? 1000,
+      duelRating: p.rating_after ?? p.rating_before ?? p.user?.duel_rating ?? DEFAULT_RATING,
       avatarUrl: p.user?.avatar_url ?? null,
       frame: p.user?.active_frame_id?.name ?? null,
       title: p.user?.active_title_id?.name ?? null,

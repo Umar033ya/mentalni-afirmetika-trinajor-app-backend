@@ -30,4 +30,5 @@ export interface GenerationConfig {
   questionCount: number;
   timePerQuestionMs: number;
   difficulty: Difficulty;
+  numberType?: "oddiy" | "kichik" | "dost" | "katta";
 }

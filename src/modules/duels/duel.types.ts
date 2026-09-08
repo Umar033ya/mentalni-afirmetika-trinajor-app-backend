@@ -15,6 +15,7 @@ export interface DuelRow {
   question_count: number;
   time_per_question_ms: number;
   difficulty: string;
+  number_type?: string;
   start_at: string | null;
   ends_at: string | null;
   finished_at: string | null;
@@ -33,6 +34,7 @@ export interface DuelPlayerRow {
   total_xp: number;
   rating_before: number | null;
   rating_after: number | null;
+  seed?: string | null;
   finished_at: string | null;
   joined_at: string;
 }

@@ -8,7 +8,8 @@ import {
   DUEL_WAITING_TTL_MS,
   EARLY_ANSWER_TOLERANCE,
   MIN_RESPONSE_TIME_MS,
-  TOTAL_TIME_TOLERANCE
+  TOTAL_TIME_TOLERANCE,
+  DEFAULT_RATING
 } from "../../config/constants";
 import { xpForCorrectAnswer } from "../../utils/xp";
 import type { Difficulty } from "../../types/question.types";
@@ -76,19 +77,41 @@ function computeExpectedAnswer(operands: number[], operation: string): number {
   }
 }
 
-function buildOperands(operation: string, digitCount: number, rows: number, rng: () => number): number[] {
+function buildOperands(
+  operation: string,
+  digitCount: number,
+  rows: number,
+  rng: () => number,
+  numberType: string = "oddiy"
+): number[] {
   const operandCount = Math.max(2, Math.min(rows, 8));
   const maxValue = 10 ** digitCount - 1;
 
   switch (operation) {
     case "addition":
+      if (numberType === "kichik") {
+        return Array.from({ length: operandCount }, () => randInt(rng, 1, Math.min(9, maxValue)));
+      }
+      if (numberType === "katta") {
+        const min = Math.max(1, Math.floor(maxValue / 2));
+        return Array.from({ length: operandCount }, () => randInt(rng, min, maxValue));
+      }
+      // 'dost' - prefer smaller friendly numbers
+      if (numberType === "dost") {
+        return Array.from({ length: operandCount }, () => randInt(rng, 1, Math.min(20, maxValue)));
+      }
       return Array.from({ length: operandCount }, () => randInt(rng, 1, maxValue));
     case "subtraction": {
       const start = randInt(rng, 1, maxValue);
-      const remaining = Array.from({ length: operandCount - 1 }, () => randInt(rng, 0, Math.min(start, maxValue)));
+      const remaining = Array.from({ length: operandCount - 1 }, () =>
+        randInt(rng, 0, Math.min(start, maxValue))
+      );
       return [start, ...remaining];
     }
     case "multiplication":
+      if (numberType === "kichik" || numberType === "dost") {
+        return Array.from({ length: operandCount }, () => randInt(rng, 1, Math.max(1, Math.min(9, Math.floor(maxValue / 4)))));
+      }
       return Array.from({ length: operandCount }, () => randInt(rng, 1, Math.max(1, Math.floor(maxValue / 2))));
     case "division": {
       const divisor = randInt(rng, 1, Math.max(1, Math.min(9, maxValue)));
@@ -109,7 +132,7 @@ function generateDuelQuestions(duelId: string, config: GenerationConfig) {
     const questionNumber = index + 1;
     const operation = operationPool[questionNumber % operationPool.length];
     const rng = mulberry32(hashString(`${duelId}:${questionNumber}`));
-    const operands = buildOperands(operation, config.digitCount, config.rows, rng);
+    const operands = buildOperands(operation, config.digitCount, config.rows, rng, (config as any).numberType);
     const answer = computeExpectedAnswer(operands, operation);
 
     return {
@@ -163,6 +186,7 @@ async function create(userId: string, payload: CreateDuelPayload) {
     questionCount: payload.questionCount,
     timePerQuestionMs: payload.timePerQuestionMs,
     difficulty: payload.difficulty
+    ,numberType: (payload as any).numberType ?? "oddiy"
   };
 
   const { data: duel, error } = await db
@@ -177,7 +201,8 @@ async function create(userId: string, payload: CreateDuelPayload) {
       question_count: config.questionCount,
       time_per_question_ms: config.timePerQuestionMs,
       difficulty: config.difficulty,
-      opponent_id: payload.mode === "challenge" ? payload.opponentId : null
+      opponent_id: payload.mode === "challenge" ? payload.opponentId : null,
+      number_type: (payload as any).numberType ?? "oddiy"
     })
     .select("*")
     .single<DuelRow>();
@@ -189,7 +214,8 @@ async function create(userId: string, payload: CreateDuelPayload) {
 
   const { error: playerError } = await db.from("duel_players").insert({
     duel_id: duel.id,
-    user_id: userId
+    user_id: userId,
+    seed: (payload as any).creatorSeed ?? null
   });
   if (playerError) throw playerError;
 
@@ -298,8 +324,11 @@ async function getState(duelId: string, userId: string) {
 }
 
 /** Second player joins; atomically transitions WAITING -> READY and schedules the synchronized start. */
-export async function join(duelId: string, userId: string) {
+export async function join(duelId: string, userId: string, payload?: { seed?: string; numberType?: string }) {
   const duel = await loadDuel(duelId);
+  if (payload?.numberType && (duel as any).number_type && payload.numberType !== (duel as any).number_type) {
+    throw new AppError(422, "NUMBER_TYPE_MISMATCH", "Provided numberType does not match duel configuration");
+  }
   if (duel.status !== "WAITING") {
     throw new AppError(409, "DUEL_NOT_JOINABLE", `Duel is not joinable (status: ${duel.status})`);
   }
@@ -334,7 +363,8 @@ export async function join(duelId: string, userId: string) {
 
   const { error: insertError } = await db.from("duel_players").insert({
     duel_id: duelId,
-    user_id: userId
+    user_id: userId,
+    seed: payload?.seed ?? null
   });
   if (insertError) throw insertError;
 
@@ -477,22 +507,17 @@ export async function submitAnswer(duelId: string, userId: string, input: DuelAn
     throw new AppError(422, "IMPOSSIBLE_RESPONSE_TIME", "Answer submitted faster than physically possible");
   }
 
-  const { data: canonicalQuestion, error: questionError } = await db
-    .from("duel_questions")
-    .select("*")
-    .eq("duel_id", duelId)
-    .eq("question_number", input.questionNumber)
-    .maybeSingle<{ answer: number; operation: string; operands: number[] }>();
-  if (questionError) throw questionError;
-  if (!canonicalQuestion) {
-    throw new AppError(404, "QUESTION_NOT_FOUND", "This duel question could not be found on the server");
-  }
-
-  const expected = Number(canonicalQuestion.answer);
-  const evaluation = {
-    isCorrect: Math.abs(expected - input.answer) < 1e-9,
-    verifiedByServer: true
-  };
+  // Compute expected answer deterministically per-player using optional per-player seed.
+  // Load player row to access seed (we already fetched `me` above).
+  const playerSeed = (me as any).seed ?? null;
+  const numberType = (duel as any).number_type ?? "oddiy";
+  const rngSeed = playerSeed ? `${duelId}:${me.user_id}:${playerSeed}:${input.questionNumber}` : `${duelId}:${input.questionNumber}`;
+  const rng = mulberry32(hashString(rngSeed));
+  const operationPool = duel.operation === "mixed" ? [...DETERMINISTIC_OPERATIONS] : [duel.operation];
+  const operation = operationPool[input.questionNumber % operationPool.length];
+  const operands = buildOperands(operation, duel.digit_count, duel.rows, rng, numberType);
+  const expected = computeExpectedAnswer(operands, operation);
+  const evaluation = { isCorrect: Math.abs(Number(expected) - input.answer) < 1e-9, verifiedByServer: true };
 
   const previousAnswersRes = await db
     .from("duel_answers")

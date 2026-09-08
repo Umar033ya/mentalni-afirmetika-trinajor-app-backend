@@ -26,7 +26,7 @@ export const EARLY_ANSWER_TOLERANCE = 0.5;
 
 export const DUEL_WAITING_TTL_MS = 30 * 60 * 1000;
 
-export const DEFAULT_RATING = 1000;
+export const DEFAULT_RATING = 0;
 export const RATING_FLOOR = 100;
 export const RATING_K_FACTOR = 32;
 export const CLOSE_MATCH_DIVIDER = 2;

@@ -10,7 +10,11 @@ export const createDuelSchema = z
   .pipe(
     generationConfigSchema.extend({
       mode: duelModeEnum.default("public"),
-      opponentId: z.string().uuid().optional()
+      opponentId: z.string().uuid().optional(),
+      // Optional duel-specific number type
+      numberType: z.enum(["oddiy", "kichik", "dost", "katta"]).default("oddiy"),
+      // Optional creator seed to allow per-player deterministic generation
+      creatorSeed: z.string().optional()
     })
   )
   .refine((v) => v.mode !== "challenge" || !!v.opponentId, {
@@ -29,6 +33,11 @@ export const duelAnswerSchema = z
   .strict();
 
 export type DuelAnswerPayload = z.infer<typeof duelAnswerSchema>;
+
+export const joinDuelSchema = z.object({
+  seed: z.string().optional(),
+  numberType: z.enum(["oddiy", "kichik", "dost", "katta"]).optional()
+});
 
 export const duelListQuerySchema = z.object({
   scope: z.enum(["mine", "all"]).default("all"),
