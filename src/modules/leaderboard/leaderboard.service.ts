@@ -17,7 +17,7 @@ async function getLeaderboard(type: LeaderboardType, limit: number) {
     .from("users")
     .select(`${USER_SELECT_WITH_COSMETICS}`)
     .eq("is_banned", false)
-    .gt(column, 0)
+    .gte(column, 0)
     .order(column, { ascending: false })
     .limit(Math.min(limit, 100));
 

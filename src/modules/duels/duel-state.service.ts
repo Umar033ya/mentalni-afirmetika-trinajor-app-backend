@@ -60,7 +60,9 @@ export function getDuelOutcomeSummary(playerScore: number, opponentScore: number
 }
 
 export function totalDuelXp(playerTotalXp: number, outcome: "win" | "loss" | "draw"): number {
-  return playerTotalXp + getDuelBonusXp(outcome);
+  // Award only the duel bonus (positive for win/draw). Losses currently carry no XP penalty.
+  // applyXp expects an XP delta (positive or negative), so return the delta to apply.
+  return getDuelBonusXp(outcome);
 }
 
 export function computeSchedule(questionCount: number, timePerQuestionMs: number) {
